@@ -1,0 +1,11 @@
+# The original 28 MB source with embedded photos — not part of the PWA.
+# Fields metadata + photos have been extracted into fields.js and photos/.
+landewiese.html
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local dev
+.claude/

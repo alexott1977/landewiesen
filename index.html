@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1a2a4a">
+<title>Landewiesen · GPS</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="leaflet.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f5f6fa;color:#222;display:flex;flex-direction:column;height:100vh;height:100dvh}
+  header{background:linear-gradient(135deg,#1a2a4a,#2d4a7a);color:#fff;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  header h1{font-size:1.05em;font-weight:700}
+  header .sub{font-size:.7em;opacity:.8;margin-top:1px}
+  .hs{display:flex;gap:14px;text-align:right}
+  .hs .v{font-size:1.1em;font-weight:700;color:#7eb3ff;line-height:1;font-variant-numeric:tabular-nums}
+  .hs .l{font-size:.62em;opacity:.7;text-transform:uppercase;letter-spacing:.5px}
+  .status{background:#fff;padding:6px 12px;border-bottom:1px solid #e0e0e0;font-size:.78em;color:#555;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;flex:0 0 auto}
+  .status .pos{font-family:ui-monospace,Consolas,monospace;font-size:.72em;color:#333}
+  .status .err{color:#c00;font-weight:600}
+  .status .ok{color:#28a745}
+  .status .fake{color:#e6a800;font-weight:600}
+  .filters{background:#fff;padding:6px 12px;border-bottom:1px solid #e0e0e0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:0 0 auto}
+  .fb{padding:4px 10px;border:1px solid #ccc;border-radius:14px;cursor:pointer;font-size:.75em;background:#fff;color:#444;user-select:none}
+  .fb.on{background:#1a73e8;color:#fff;border-color:#1a73e8}
+  .fb.ka.on{background:#28a745;border-color:#28a745}
+  .fb.kb.on{background:#e6a800;border-color:#e6a800}
+  .fb .num{opacity:.7;font-size:.85em;margin-left:2px}
+  #count{margin-left:auto;font-size:.72em;color:#666}
+  .split{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+  #map{flex:1 1 55%;min-height:200px;background:#dde4ec;position:relative}
+  #list{flex:1 1 45%;overflow-y:auto;padding:6px 8px;-webkit-overflow-scrolling:touch;background:#f5f6fa}
+  .drag{height:8px;background:#e0e5ec;cursor:ns-resize;border-top:1px solid #cfd6df;border-bottom:1px solid #cfd6df;position:relative;flex:0 0 auto;touch-action:none}
+  .drag::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:36px;height:3px;background:#8b95a1;border-radius:2px}
+  .card{background:#fff;border-radius:6px;border:1px solid #e0e0e0;margin-bottom:6px;padding:8px 10px;display:flex;align-items:center;gap:8px;cursor:pointer}
+  .card.ka{border-left:4px solid #28a745}
+  .card.kb{border-left:4px solid #e6a800}
+  .card.active{outline:2px solid #1a73e8;outline-offset:-2px}
+  .card .info{flex:1;min-width:0}
+  .card .name{font-weight:600;font-size:.92em;color:#1a2a4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .meta{font-size:.72em;color:#666;margin-top:1px;display:flex;gap:8px;flex-wrap:wrap}
+  .card .dist{font-weight:700;font-size:1em;color:#1a2a4a;text-align:right;white-space:nowrap}
+  .card .dist small{display:block;font-weight:400;font-size:.62em;color:#888;margin-top:1px}
+  .card .brg .arrow{display:inline-block;transform-origin:center;font-weight:700}
+
+  .hint{padding:30px 16px;text-align:center;color:#888;font-size:.88em}
+  .hint button{margin:6px 4px 0;padding:9px 16px;background:#1a73e8;color:#fff;border:0;border-radius:20px;font-size:.9em;font-weight:600;cursor:pointer}
+  .hint button.alt{background:#e6a800}
+  .hint .warn{color:#c00;font-size:.82em;margin-top:8px}
+
+  .plane-wrap{width:80px;height:80px;position:relative;pointer-events:none}
+  .plane-marker{position:absolute;top:16px;left:16px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+  .plane-marker svg{width:48px;height:48px;transform-origin:center;overflow:visible}
+  .plane-marker svg .body{fill:#1a73e8;stroke:#fff;stroke-width:2;stroke-linejoin:round;paint-order:stroke fill}
+  .plane-label{position:absolute;top:62px;left:50%;transform:translateX(-50%);background:rgba(26,42,74,.92);color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1.2;pointer-events:none}
+  .fld-marker{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+  .fld-marker.a{background:#28a745}
+  .fld-marker.b{background:#e6a800}
+  .mapctl{position:absolute;z-index:500;right:8px;display:flex;flex-direction:column;gap:4px}
+  .mapctl.top{top:8px}
+  .mapctl button{width:36px;height:36px;border:0;border-radius:6px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer;font-size:1em;line-height:1}
+  .mapctl button.on{background:#1a73e8;color:#fff}
+
+  /* Small popup on map click — quick preview */
+  .leaflet-popup-content{margin:8px 10px;font-size:.85em;min-width:180px}
+  .leaflet-popup-content b{color:#1a2a4a;font-size:1.05em}
+  .leaflet-popup-content .p-meta{color:#666;font-size:.9em;margin-top:2px}
+  .leaflet-popup-content .p-btn{display:inline-block;margin-top:6px;padding:4px 10px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:5px;font-size:.85em;font-weight:600;cursor:pointer;border:0}
+
+  /* Detail sheet */
+  #sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:none;align-items:flex-end;justify-content:center;padding:0}
+  #sheet.show{display:flex}
+  .sheet-inner{background:#fff;width:100%;max-width:640px;max-height:92vh;border-radius:14px 14px 0 0;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 -6px 30px rgba(0,0,0,.25)}
+  .sheet-hd{padding:14px 16px 10px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px}
+  .sheet-hd h2{font-size:1.15em;color:#1a2a4a;flex:1;line-height:1.2}
+  .sheet-hd .badge{padding:3px 9px;border-radius:10px;font-size:.72em;font-weight:bold}
+  .sheet-hd .ba{background:#d4edda;color:#155724}
+  .sheet-hd .bb{background:#fff3cd;color:#856404}
+  .sheet-close{background:none;border:0;font-size:1.5em;cursor:pointer;color:#888;padding:0 6px;line-height:1}
+  .sheet-body{overflow-y:auto;flex:1;padding:0 16px 24px}
+  .sheet-sub{color:#666;font-size:.85em;margin:6px 0 12px}
+  .sheet-photos{display:flex;gap:6px;overflow-x:auto;padding:10px 0;scroll-snap-type:x mandatory}
+  .sheet-photos img{height:150px;width:200px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0;scroll-snap-align:start;background:#eee}
+  .sheet-photos .nophoto{padding:20px;color:#888;font-size:.9em;font-style:italic;background:#f5f6fa;border-radius:6px}
+  .sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:10px 0}
+  .sheet-grid .row{padding:6px 0;border-bottom:1px solid #f0f0f0}
+  .sheet-grid .row.full{grid-column:1/-1}
+  .sheet-grid .l{color:#888;font-size:.72em;text-transform:uppercase;letter-spacing:.4px}
+  .sheet-grid .v{color:#1a2a4a;font-size:.95em;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
+  .sheet-dir{background:#e8f0fe;border-left:4px solid #1a73e8;padding:8px 12px;margin:10px 0;border-radius:0 6px 6px 0;font-size:.95em;color:#1a2a4a;font-weight:600}
+  .sheet-det{background:#fafafa;border:1px solid #eee;padding:10px 12px;border-radius:6px;margin:10px 0;font-size:.88em;color:#333;line-height:1.4}
+  .sheet-link{display:inline-block;margin-top:10px;padding:8px 14px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:6px;font-size:.88em;font-weight:600}
+
+  #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:3000;align-items:center;justify-content:center}
+  #lb.show{display:flex}
+  #lb img{max-width:96vw;max-height:92vh;border-radius:6px}
+  #lb .close{position:absolute;top:14px;right:20px;color:#fff;font-size:1.8em;cursor:pointer;background:none;border:0}
+
+  @media (prefers-color-scheme:dark){
+    body{background:#111418;color:#e2e6eb}
+    .status,.filters,.card{background:#1a1f26;border-color:#2b3138}
+    .status{color:#a8b2bd}
+    .fb{background:#1a1f26;color:#ccc;border-color:#2b3138}
+    .card .name{color:#e2e6eb}
+    .card .meta{color:#8b95a1}
+    .card .dist{color:#7eb3ff}
+    .hint{color:#8b95a1}
+    #list{background:#111418}
+    .drag{background:#2b3138;border-color:#3a4048}
+    .mapctl button{background:#1a1f26;color:#e2e6eb}
+    .sheet-inner{background:#1a1f26}
+    .sheet-hd,.sheet-body{color:#e2e6eb}
+    .sheet-hd{border-color:#2b3138}
+    .sheet-grid .row{border-color:#2b3138}
+    .sheet-grid .v{color:#e2e6eb}
+    .sheet-det{background:#111418;border-color:#2b3138;color:#e2e6eb}
+    .sheet-dir{background:#1c2740;color:#cfe0ff}
+    .sheet-photos .nophoto{background:#111418;color:#8b95a1}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Landewiesen · GPS</h1>
+    <div class="sub"><span id="fCount">771</span> Landewiesen · A + B</div>
+  </div>
+  <div class="hs">
+    <div><div class="v" id="hAlt">—</div><div class="l">Höhe</div></div>
+    <div><div class="v" id="hSpd">—</div><div class="l">Speed</div></div>
+    <div><div class="v" id="hCrs">—</div><div class="l">Kurs</div></div>
+  </div>
+</header>
+
+<div class="status">
+  <span id="gpsStatus">GPS: warte auf Freigabe…</span>
+  <span id="gpsPos" class="pos"></span>
+</div>
+
+<div class="filters">
+  <button class="fb ka on" data-k="A">Kat. A <span class="num" id="numA"></span></button>
+  <button class="fb kb on" data-k="B">Kat. B <span class="num" id="numB"></span></button>
+  <button class="fb" id="unitBtn">km</button>
+  <button class="fb on" id="followBtn" title="Karte folgt Position">📍 Follow</button>
+  <span id="count"></span>
+</div>
+
+<div class="split">
+  <div id="map">
+    <div class="mapctl top">
+      <button id="mapLocateBtn" title="Zur Position">🎯</button>
+    </div>
+  </div>
+  <div class="drag" id="drag"></div>
+  <div id="list">
+    <div class="hint" id="hint">
+      <div>Diese App braucht deinen Standort, um die nächsten Landewiesen zu zeigen.</div>
+      <button id="startBtn">Standort freigeben</button>
+      <button id="fakeBtn" class="alt">Ohne GPS · Füssen</button>
+      <div class="warn" id="hintErr"></div>
+    </div>
+  </div>
+</div>
+
+<div id="sheet"><div class="sheet-inner" id="sheetInner"></div></div>
+<div id="lb"><button class="close" id="lbClose">×</button><img id="lbImg" alt=""></div>
+
+<script src="fields.js"></script>
+<script src="leaflet.js"></script>
+<script>
+(() => {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+  const FUESSEN = {lat: 47.5717, lon: 10.7003, alt: 803, name: 'Füssen'};
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function bearing(lat1, lon1, lat2, lon2) {
+    const φ1 = toRad(lat1), φ2 = toRad(lat2);
+    const Δλ = toRad(lon2 - lon1);
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+  const compassLabel = deg => ['N','NO','O','SO','S','SW','W','NW'][Math.round(deg / 45) % 8];
+
+  const fields = window.LANDEFIELDS || [];
+  document.getElementById('fCount').textContent = fields.length;
+  document.getElementById('numA').textContent = '(' + fields.filter(f => f.k === 'A').length + ')';
+  document.getElementById('numB').textContent = '(' + fields.filter(f => f.k === 'B').length + ')';
+
+  const state = {
+    pos: null,
+    watchId: null,
+    fakeTimer: null,
+    isFake: false,
+    filter: {A: true, B: true},
+    unit: 'km',
+    follow: true,
+    lastRender: 0,
+    activeIndex: -1
+  };
+
+  const el = {
+    list: document.getElementById('list'),
+    hint: document.getElementById('hint'),
+    hintErr: document.getElementById('hintErr'),
+    startBtn: document.getElementById('startBtn'),
+    fakeBtn: document.getElementById('fakeBtn'),
+    status: document.getElementById('gpsStatus'),
+    pos: document.getElementById('gpsPos'),
+    count: document.getElementById('count'),
+    unitBtn: document.getElementById('unitBtn'),
+    followBtn: document.getElementById('followBtn'),
+    mapLocateBtn: document.getElementById('mapLocateBtn'),
+    hAlt: document.getElementById('hAlt'),
+    hSpd: document.getElementById('hSpd'),
+    hCrs: document.getElementById('hCrs'),
+    sheet: document.getElementById('sheet'),
+    sheetInner: document.getElementById('sheetInner'),
+    lb: document.getElementById('lb'),
+    lbImg: document.getElementById('lbImg'),
+    lbClose: document.getElementById('lbClose')
+  };
+
+  // --- Map setup ---
+  const map = L.map('map', {center: [47.5, 11.0], zoom: 7, zoomControl: true, preferCanvas: true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap'}).addTo(map);
+
+  map.on('dragstart zoomstart', () => {
+    if (state.follow) { state.follow = false; el.followBtn.classList.remove('on'); }
+  });
+
+  // Top-down airliner silhouette (nose at top), designed within a 40x40 viewBox
+  const planeSvg = '<svg viewBox="0 0 40 40"><path class="body" d="M20 3 C21.2 3 22 5 22 8 L22 16 L36 22 L36 25 L22 22 L22 30 L26 32 L26 34 L20 32 L14 34 L14 32 L18 30 L18 22 L4 25 L4 22 L18 16 L18 8 C18 5 18.8 3 20 3 Z"/></svg>';
+  const isNum = v => typeof v === 'number' && !isNaN(v);
+  function planeIconHtml(alt, spd) {
+    const parts = [];
+    if (isNum(alt)) parts.push(Math.round(alt) + ' m');
+    if (isNum(spd)) parts.push(Math.round(spd * 3.6) + ' km/h');
+    const label = parts.length ? '<div class="plane-label">' + parts.join(' · ') + '</div>' : '';
+    return '<div class="plane-wrap"><div class="plane-marker"><span id="planeArrow">' + planeSvg + '</span></div>' + label + '</div>';
+  }
+  function makePlaneIcon(alt, spd) {
+    return L.divIcon({className:'', html: planeIconHtml(alt, spd), iconSize:[70,70], iconAnchor:[35,35]});
+  }
+  let planeMarker = null, accuracyCircle = null;
+
+  const iconA = L.divIcon({className:'', html:'<div class="fld-marker a"></div>', iconSize:[14,14], iconAnchor:[7,7]});
+  const iconB = L.divIcon({className:'', html:'<div class="fld-marker b"></div>', iconSize:[14,14], iconAnchor:[7,7]});
+
+  const layerA = L.layerGroup();
+  const layerB = L.layerGroup();
+  const fieldMarkers = new Map();
+
+  function popupHtml(i) {
+    const f = fields[i];
+    const distTxt = state.pos ? fmtDist(haversine(state.pos.lat, state.pos.lon, f.lat, f.lon)) : '';
+    const brgTxt = state.pos ? (' · ' + bearing(state.pos.lat, state.pos.lon, f.lat, f.lon).toFixed(0) + '°') : '';
+    return '<b>' + escapeHtml(f.n) + '</b>' +
+           '<div class="p-meta">Kat. ' + f.k + (distTxt ? ' · ' + distTxt : '') + brgTxt + (f.alt ? '<br>Höhe: ' + escapeHtml(f.alt) : '') + '</div>' +
+           '<button class="p-btn" onclick="window.__openDetail(' + i + ')">Details ansehen</button>';
+  }
+
+  function focusField(i) {
+    const m = fieldMarkers.get(i);
+    if (!m) return;
+    state.activeIndex = i;
+    highlightCard(i);
+    m.bindPopup(popupHtml(i));
+    map.setView(m.getLatLng(), Math.max(map.getZoom(), 12), {animate: true});
+    m.openPopup();
+  }
+
+  fields.forEach((f, i) => {
+    if (f.lat == null || f.lon == null) return;
+    const m = L.marker([f.lat, f.lon], {icon: f.k === 'A' ? iconA : iconB, title: f.n});
+    m.on('click', () => focusField(i));
+    fieldMarkers.set(i, m);
+    (f.k === 'A' ? layerA : layerB).addLayer(m);
+  });
+  layerA.addTo(map);
+  layerB.addTo(map);
+
+  function applyFilterToMap() {
+    if (state.filter.A) { if (!map.hasLayer(layerA)) layerA.addTo(map); }
+    else if (map.hasLayer(layerA)) map.removeLayer(layerA);
+    if (state.filter.B) { if (!map.hasLayer(layerB)) layerB.addTo(map); }
+    else if (map.hasLayer(layerB)) map.removeLayer(layerB);
+  }
+
+  function fmtDist(km) {
+    if (state.unit === 'mi') {
+      const mi = km * 0.621371;
+      return mi < 0.1 ? (mi * 5280).toFixed(0) + ' ft' : mi < 10 ? mi.toFixed(2) + ' mi' : mi.toFixed(1) + ' mi';
+    }
+    return km < 1 ? (km * 1000).toFixed(0) + ' m' : km < 10 ? km.toFixed(2) + ' km' : km.toFixed(1) + ' km';
+  }
+
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function highlightCard(i) {
+    document.querySelectorAll('#list .card').forEach(c => c.classList.toggle('active', +c.dataset.i === i));
+    const active = document.querySelector('#list .card.active');
+    if (active) active.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }
+
+  function render() {
+    if (!state.pos) return;
+    const {lat, lon} = state.pos;
+    const visible = [];
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      if (!state.filter[f.k]) continue;
+      if (f.lat == null || f.lon == null) continue;
+      const d = haversine(lat, lon, f.lat, f.lon);
+      visible.push({i, f, d, b: bearing(lat, lon, f.lat, f.lon)});
+    }
+    visible.sort((a, b) => a.d - b.d);
+    const top = visible.slice(0, 50);
+    el.count.textContent = visible.length + ' gefiltert · Top 50';
+
+    el.list.innerHTML = top.map(({i, f, d, b}) => {
+      const dir = compassLabel(b);
+      return '<div class="card k' + f.k.toLowerCase() + (i === state.activeIndex ? ' active' : '') + '" data-i="' + i + '">' +
+             '<div class="info">' +
+               '<div class="name">' + escapeHtml(f.n) + '</div>' +
+               '<div class="meta">' +
+                 '<span>Kat. ' + f.k + '</span>' +
+                 (f.alt ? '<span>' + escapeHtml(f.alt.split('|')[0].trim()) + '</span>' : '') +
+                 '<span class="brg"><span class="arrow" style="transform:rotate(' + b.toFixed(0) + 'deg);display:inline-block">↑</span>' + dir + ' · ' + b.toFixed(0) + '°</span>' +
+               '</div>' +
+             '</div>' +
+             '<div class="dist">' + fmtDist(d) + '<small>Luftlinie</small></div>' +
+             '</div>';
+    }).join('');
+
+    el.list.querySelectorAll('.card').forEach(c => {
+      c.addEventListener('click', () => {
+        const i = +c.dataset.i;
+        openDetail(i);
+      });
+    });
+  }
+
+  function updateHeader(p) {
+    el.hAlt.textContent = (p.alt != null && !isNaN(p.alt)) ? Math.round(p.alt) + ' m' : '—';
+    el.hSpd.textContent = (p.speed != null && !isNaN(p.speed)) ? (p.speed * 3.6).toFixed(0) + ' km/h' : '—';
+    el.hCrs.textContent = (p.heading != null && !isNaN(p.heading)) ? Math.round(p.heading) + '°' : '—';
+  }
+
+  function updatePlane(p) {
+    const ll = [p.lat, p.lon];
+    if (!planeMarker) {
+      planeMarker = L.marker(ll, {icon: makePlaneIcon(p.alt, p.speed), zIndexOffset: 1000}).addTo(map);
+      accuracyCircle = L.circle(ll, {radius: p.acc || 30, color:'#1a73e8', fillColor:'#1a73e8', fillOpacity:.12, weight:1}).addTo(map);
+      if (state.follow) {
+        const visible = fields.filter(f => state.filter[f.k] && f.lat != null)
+          .map(f => ({f, d: haversine(p.lat, p.lon, f.lat, f.lon)}))
+          .sort((a,b) => a.d - b.d).slice(0, 5);
+        if (visible.length) {
+          const pts = [ll, ...visible.map(v => [v.f.lat, v.f.lon])];
+          map.fitBounds(pts, {padding:[30,30], maxZoom: 12});
+        } else map.setView(ll, 11);
+      }
+    } else {
+      planeMarker.setLatLng(ll);
+      planeMarker.setIcon(makePlaneIcon(p.alt, p.speed));
+      if (accuracyCircle) { accuracyCircle.setLatLng(ll); accuracyCircle.setRadius(p.acc || 30); }
+      if (state.follow) map.panTo(ll, {animate:true, duration:.5});
+    }
+    if (typeof p.heading === 'number' && !isNaN(p.heading)) {
+      const arrow = document.getElementById('planeArrow');
+      if (arrow) arrow.style.transform = 'rotate(' + p.heading + 'deg)';
+    }
+  }
+
+  function onPos(p, opts) {
+    opts = opts || {};
+    state.pos = {
+      lat: p.coords.latitude,
+      lon: p.coords.longitude,
+      acc: p.coords.accuracy,
+      alt: p.coords.altitude,
+      heading: p.coords.heading,
+      speed: p.coords.speed
+    };
+    state.isFake = !!opts.fake;
+    if (state.fakeTimer) { clearTimeout(state.fakeTimer); state.fakeTimer = null; }
+
+    const badge = state.isFake
+      ? '<span class="fake">FAKE · ' + escapeHtml(opts.name || 'Füssen') + '</span>'
+      : '<span class="ok">GPS aktiv</span>';
+    const parts = [badge, '±' + Math.round(state.pos.acc) + ' m'];
+    el.status.innerHTML = parts.join(' · ');
+    el.pos.textContent = state.pos.lat.toFixed(5) + ', ' + state.pos.lon.toFixed(5);
+    updateHeader(state.pos);
+    el.hint.style.display = 'none';
+    updatePlane(state.pos);
+    const now = Date.now();
+    if (now - state.lastRender > 500) {
+      state.lastRender = now;
+      render();
+    }
+  }
+
+  function onErr(e) {
+    const map = {
+      1: 'Standort-Freigabe verweigert.',
+      2: 'Position nicht verfügbar.',
+      3: 'GPS-Anfrage abgelaufen.'
+    };
+    el.status.innerHTML = '<span class="err">GPS-Fehler</span> — nutze Fake-Position…';
+    el.hintErr.textContent = map[e.code] || e.message;
+    useFake();
+  }
+
+  function useFake() {
+    const p = {coords: {latitude: FUESSEN.lat, longitude: FUESSEN.lon, accuracy: 0, altitude: FUESSEN.alt, heading: NaN, speed: NaN}};
+    onPos(p, {fake: true, name: FUESSEN.name});
+  }
+
+  function startGps() {
+    if (!('geolocation' in navigator)) {
+      el.status.innerHTML = '<span class="err">Kein Geolocation-API — nutze Fake-Position</span>';
+      useFake();
+      return;
+    }
+    if (state.watchId != null) return;
+    el.status.textContent = 'GPS: warte auf erste Position…';
+    state.fakeTimer = setTimeout(() => {
+      if (!state.pos) {
+        el.status.innerHTML = '<span class="fake">GPS zu langsam — Fake-Position bei Füssen</span>';
+        useFake();
+      }
+    }, 8000);
+    state.watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+      enableHighAccuracy: true, maximumAge: 3000, timeout: 20000
+    });
+  }
+
+  el.startBtn.addEventListener('click', startGps);
+  el.fakeBtn.addEventListener('click', useFake);
+
+  document.querySelectorAll('.fb[data-k]').forEach(b => {
+    b.addEventListener('click', () => {
+      const k = b.dataset.k;
+      state.filter[k] = !state.filter[k];
+      b.classList.toggle('on', state.filter[k]);
+      applyFilterToMap();
+      render();
+    });
+  });
+  el.unitBtn.addEventListener('click', () => {
+    state.unit = state.unit === 'km' ? 'mi' : 'km';
+    el.unitBtn.textContent = state.unit;
+    render();
+  });
+  el.followBtn.addEventListener('click', () => {
+    state.follow = !state.follow;
+    el.followBtn.classList.toggle('on', state.follow);
+    if (state.follow && state.pos) map.setView([state.pos.lat, state.pos.lon], Math.max(map.getZoom(), 11));
+  });
+  el.mapLocateBtn.addEventListener('click', () => {
+    if (state.pos) map.setView([state.pos.lat, state.pos.lon], Math.max(map.getZoom(), 12));
+  });
+
+  // Resizable split
+  (() => {
+    const drag = document.getElementById('drag');
+    const mapEl = document.getElementById('map');
+    const listEl = document.getElementById('list');
+    let startY = 0, startMapH = 0;
+    function onMove(e) {
+      const y = e.touches ? e.touches[0].clientY : e.clientY;
+      const dy = y - startY;
+      const parent = drag.parentElement;
+      const total = parent.getBoundingClientRect().height;
+      const newMapH = Math.max(120, Math.min(total - 120, startMapH + dy));
+      mapEl.style.flex = '0 0 ' + newMapH + 'px';
+      listEl.style.flex = '1 1 auto';
+      map.invalidateSize();
+    }
+    function stop() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', stop);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', stop);
+    }
+    function start(e) {
+      startY = e.touches ? e.touches[0].clientY : e.clientY;
+      startMapH = mapEl.getBoundingClientRect().height;
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', stop);
+      document.addEventListener('touchmove', onMove, {passive: false});
+      document.addEventListener('touchend', stop);
+      e.preventDefault();
+    }
+    drag.addEventListener('mousedown', start);
+    drag.addEventListener('touchstart', start, {passive: false});
+  })();
+
+  // --- Detail sheet ---
+  function openDetail(i) {
+    const f = fields[i];
+    if (!f) return;
+    state.activeIndex = i;
+    highlightCard(i);
+    const d = state.pos ? haversine(state.pos.lat, state.pos.lon, f.lat, f.lon) : null;
+    const b = state.pos ? bearing(state.pos.lat, state.pos.lon, f.lat, f.lon) : null;
+    const kBadge = 'b' + f.k.toLowerCase();
+
+    const photos = (f.ph || []).map(fn =>
+      '<img src="photos/' + escapeHtml(fn) + '" alt="' + escapeHtml(f.n) + '" loading="lazy" data-src="photos/' + escapeHtml(fn) + '">'
+    ).join('') || '<div class="nophoto">Keine Fotos für diese Landewiese</div>';
+
+    function row(label, value, full) {
+      if (!value) return '';
+      return '<div class="row' + (full ? ' full' : '') + '"><div class="l">' + escapeHtml(label) + '</div><div class="v">' + escapeHtml(value) + '</div></div>';
+    }
+    const distRow = d != null
+      ? row('Entfernung', fmtDist(d) + ' · ' + b.toFixed(0) + '° ' + compassLabel(b), true)
+      : '';
+
+    el.sheetInner.innerHTML =
+      '<div class="sheet-hd">' +
+        '<h2>' + escapeHtml(f.n) + '</h2>' +
+        '<span class="badge ' + kBadge + '">KAT ' + f.k + '</span>' +
+        '<button class="sheet-close" id="sheetCloseBtn" aria-label="Schließen">×</button>' +
+      '</div>' +
+      '<div class="sheet-body">' +
+        '<div class="sheet-sub">' + escapeHtml([f.land, f.reg].filter(Boolean).join(' · ')) + (f.year ? ' · Geprüft ' + f.year : '') + '</div>' +
+        '<div class="sheet-photos" id="sheetPhotos">' + photos + '</div>' +
+        (f.dir ? '<div class="sheet-dir">↳ ' + escapeHtml(f.dir) + '</div>' : '') +
+        '<div class="sheet-grid">' +
+          distRow +
+          row('Kategorie', f.kd) +
+          row('Höhe (MSL)', f.alt) +
+          row('Länge', f.l) +
+          row('Breite', f.b) +
+          row('Oberfläche', f.surf) +
+          row('GPS', (f.lat != null ? f.lat.toFixed(5) + ', ' + f.lon.toFixed(5) : ''), true) +
+        '</div>' +
+        (f.det ? '<div class="sheet-det">' + escapeHtml(f.det) + '</div>' : '') +
+        (f.web ? '<a class="sheet-link" href="' + escapeHtml(f.web) + '" target="_blank" rel="noopener">Externe Info-Seite öffnen ↗</a>' : '') +
+      '</div>';
+
+    el.sheet.classList.add('show');
+    document.getElementById('sheetCloseBtn').addEventListener('click', closeDetail);
+    document.getElementById('sheetPhotos').addEventListener('click', e => {
+      if (e.target.tagName === 'IMG') { el.lbImg.src = e.target.dataset.src; el.lb.classList.add('show'); }
+    });
+  }
+  function closeDetail() { el.sheet.classList.remove('show'); }
+  el.sheet.addEventListener('click', e => { if (e.target === el.sheet) closeDetail(); });
+  el.lbClose.addEventListener('click', () => el.lb.classList.remove('show'));
+  el.lb.addEventListener('click', e => { if (e.target === el.lb) el.lb.classList.remove('show'); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeDetail(); el.lb.classList.remove('show'); }
+  });
+
+  // Expose for popup button
+  window.__openDetail = openDetail;
+
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({name:'geolocation'}).then(p => {
+      if (p.state === 'granted') startGps();
+    }).catch(() => {});
+  }
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed', err));
+  }
+})();
+</script>
+</body>
+</html>
