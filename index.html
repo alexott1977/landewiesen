@@ -89,6 +89,7 @@
   .sheet-section-label{font-size:.72em;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
   .sheet-aerial{height:240px;border-radius:8px;overflow:hidden;background:#dde4ec;position:relative;border:1px solid #e0e0e0}
   .sheet-aerial .leaflet-control-attribution{font-size:9px}
+  .dir-label{background:rgba(229,57,53,.95);color:#fff;font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4);font-variant-numeric:tabular-nums;line-height:1.3;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.4)}
   .sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:10px 0}
   .sheet-grid .row{padding:6px 0;border-bottom:1px solid #f0f0f0}
   .sheet-grid .row.full{grid-column:1/-1}
@@ -515,14 +516,76 @@
   })();
 
   // --- Detail sheet ---
+  // Compute endpoint from (lat, lon) at bearing (deg) and distance (km)
+  function destinationPoint(lat, lon, bearingDeg, distKm) {
+    const δ = distKm / 6371;
+    const θ = toRad(bearingDeg);
+    const φ1 = toRad(lat);
+    const λ1 = toRad(lon);
+    const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
+    const λ2 = λ1 + Math.atan2(
+      Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
+      Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2)
+    );
+    return [toDeg(φ2), toDeg(λ2)];
+  }
+
+  // Parse landing direction strings like "06/24", "09/-", "18", "07/25"
+  // Runway numbers are heading/10 (rounded), so "06" = 060°, "24" = 240°.
+  function parseDir(dir) {
+    if (!dir) return [];
+    const parts = dir.split(/[\/,]/).map(s => s.trim()).filter(s => s && s !== '-');
+    return parts.map(p => {
+      const n = parseInt(p, 10);
+      if (isNaN(n)) return null;
+      return (n * 10) % 360;  // "06" -> 60°, "36" -> 360° -> 0°
+    }).filter(v => v !== null);
+  }
+
   function initAerial(f, container) {
     if (!container) return;
     const mini = L.map(container, {zoomControl: true, attributionControl: true, tap: false});
-    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'});
-    const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'});
-    sat.addTo(mini);
-    L.control.layers({'Satellit': sat, 'Karte': street}, null, {position: 'topright', collapsed: true}).addTo(mini);
+
+    const layers = {
+      'Satellit (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'}),
+      'Orthofoto AT (30cm)': L.tileLayer('https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg', {maxZoom: 19, attribution: 'Basemap.at', bounds: [[46.35, 9.53], [49.02, 17.16]]}),
+      'OpenTopoMap': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {maxZoom: 17, attribution: '&copy; OpenTopoMap (CC-BY-SA)'}),
+      'Karte (OSM)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'})
+    };
+
+    // Default: BasemapAT Orthofoto if the site is in Austria (30cm HD), else Esri
+    const isAT = (f.land || '').toLowerCase() === 'österreich' || (f.land || '').toLowerCase() === 'oesterreich';
+    const defaultLayer = isAT ? layers['Orthofoto AT (30cm)'] : layers['Satellit (Esri)'];
+    defaultLayer.addTo(mini);
+
+    L.control.layers(layers, null, {position: 'topright', collapsed: true}).addTo(mini);
     L.marker([f.lat, f.lon]).addTo(mini);
+
+    // Landing direction overlay — one polyline per heading (200 m each), red with arrowhead
+    const headings = parseDir(f.dir);
+    headings.forEach(hdg => {
+      const end = destinationPoint(f.lat, f.lon, hdg, 0.2);
+      const line = L.polyline([[f.lat, f.lon], end], {color: '#e53935', weight: 4, opacity: 0.9}).addTo(mini);
+      // Draw a small arrowhead triangle at the end using two short lines
+      const arrowLen = 0.04; // 40 m
+      const leftHdg  = (hdg + 180 + 20) % 360;
+      const rightHdg = (hdg + 180 - 20 + 360) % 360;
+      const arrowLeft  = destinationPoint(end[0], end[1], leftHdg,  arrowLen);
+      const arrowRight = destinationPoint(end[0], end[1], rightHdg, arrowLen);
+      L.polyline([arrowLeft, end, arrowRight], {color: '#e53935', weight: 4, opacity: 0.9}).addTo(mini);
+      // Runway number label
+      const labelPos = destinationPoint(f.lat, f.lon, hdg, 0.11);
+      L.marker(labelPos, {
+        icon: L.divIcon({
+          className: '',
+          html: '<div class="dir-label">' + Math.round(hdg / 10).toString().padStart(2, '0') + '</div>',
+          iconSize: [30, 20],
+          iconAnchor: [15, 10]
+        }),
+        interactive: false
+      }).addTo(mini);
+    });
+
     mini.setView([f.lat, f.lon], 17);
     setTimeout(() => mini.invalidateSize(), 300);
     state.sheetMap = mini;
