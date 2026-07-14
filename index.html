@@ -86,6 +86,9 @@
   .sheet-photos{display:flex;gap:6px;overflow-x:auto;padding:10px 0;scroll-snap-type:x mandatory}
   .sheet-photos img{height:150px;width:200px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0;scroll-snap-align:start;background:#eee}
   .sheet-photos .nophoto{padding:20px;color:#888;font-size:.9em;font-style:italic;background:#f5f6fa;border-radius:6px}
+  .sheet-section-label{font-size:.72em;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px}
+  .sheet-aerial{height:240px;border-radius:8px;overflow:hidden;background:#dde4ec;position:relative;border:1px solid #e0e0e0}
+  .sheet-aerial .leaflet-control-attribution{font-size:9px}
   .sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:10px 0}
   .sheet-grid .row{padding:6px 0;border-bottom:1px solid #f0f0f0}
   .sheet-grid .row.full{grid-column:1/-1}
@@ -512,6 +515,18 @@
   })();
 
   // --- Detail sheet ---
+  function initAerial(f, container) {
+    if (!container) return;
+    const mini = L.map(container, {zoomControl: true, attributionControl: true, tap: false});
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'});
+    const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'});
+    sat.addTo(mini);
+    L.control.layers({'Satellit': sat, 'Karte': street}, null, {position: 'topright', collapsed: true}).addTo(mini);
+    L.marker([f.lat, f.lon]).addTo(mini);
+    mini.setView([f.lat, f.lon], 17);
+    setTimeout(() => mini.invalidateSize(), 300);
+    state.sheetMap = mini;
+  }
   function openDetail(i) {
     const f = fields[i];
     if (!f) return;
@@ -521,9 +536,9 @@
     const b = state.pos ? bearing(state.pos.lat, state.pos.lon, f.lat, f.lon) : null;
     const kBadge = 'b' + f.k.toLowerCase();
 
-    const photos = (f.ph || []).map(fn =>
+    const photosHtml = (f.ph || []).map(fn =>
       '<img src="photos/' + escapeHtml(fn) + '" alt="' + escapeHtml(f.n) + '" loading="lazy" data-src="photos/' + escapeHtml(fn) + '">'
-    ).join('') || '<div class="nophoto">Keine Fotos für diese Landewiese</div>';
+    ).join('') || '<div class="nophoto">Keine Bodenaufnahmen für diese Landewiese</div>';
 
     function row(label, value, full) {
       if (!value) return '';
@@ -533,6 +548,8 @@
       ? row('Entfernung', fmtDist(d) + ' · ' + b.toFixed(0) + '° ' + compassLabel(b), true)
       : '';
 
+    const aerialAvail = (f.lat != null && f.lon != null);
+
     el.sheetInner.innerHTML =
       '<div class="sheet-hd">' +
         '<h2>' + escapeHtml(f.n) + '</h2>' +
@@ -541,7 +558,9 @@
       '</div>' +
       '<div class="sheet-body">' +
         '<div class="sheet-sub">' + escapeHtml([f.land, f.reg].filter(Boolean).join(' · ')) + (f.year ? ' · Geprüft ' + f.year : '') + '</div>' +
-        '<div class="sheet-photos" id="sheetPhotos">' + photos + '</div>' +
+        (aerialAvail ? '<div class="sheet-section-label">Luftbild</div><div class="sheet-aerial" id="sheetAerial"></div>' : '') +
+        '<div class="sheet-section-label">Bodenaufnahmen</div>' +
+        '<div class="sheet-photos" id="sheetPhotos">' + photosHtml + '</div>' +
         (f.dir ? '<div class="sheet-dir">↳ ' + escapeHtml(f.dir) + '</div>' : '') +
         '<div class="sheet-grid">' +
           distRow +
@@ -561,8 +580,25 @@
     document.getElementById('sheetPhotos').addEventListener('click', e => {
       if (e.target.tagName === 'IMG') { el.lbImg.src = e.target.dataset.src; el.lb.classList.add('show'); }
     });
+
+    // Init aerial mini-map after the sheet has actually painted so Leaflet can measure the container.
+    if (state.sheetMap) { state.sheetMap.remove(); state.sheetMap = null; }
+    if (aerialAvail) {
+      setTimeout(() => {
+        const container = document.getElementById('sheetAerial');
+        if (!container || container.offsetWidth < 10) {
+          // Container not laid out yet — retry once more
+          setTimeout(() => initAerial(f, document.getElementById('sheetAerial')), 200);
+          return;
+        }
+        initAerial(f, container);
+      }, 30);
+    }
   }
-  function closeDetail() { el.sheet.classList.remove('show'); }
+  function closeDetail() {
+    el.sheet.classList.remove('show');
+    if (state.sheetMap) { state.sheetMap.remove(); state.sheetMap = null; }
+  }
   el.sheet.addEventListener('click', e => { if (e.target === el.sheet) closeDetail(); });
   el.lbClose.addEventListener('click', () => el.lb.classList.remove('show'));
   el.lb.addEventListener('click', e => { if (e.target === el.lb) el.lb.classList.remove('show'); });

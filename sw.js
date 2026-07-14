@@ -1,4 +1,4 @@
-const CACHE = 'landewiesen-v6';
+const CACHE = 'landewiesen-v7';
 const ASSETS = [
   './',
   './index.html',
